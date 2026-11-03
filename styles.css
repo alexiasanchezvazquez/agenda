@@ -88,7 +88,7 @@ input, textarea { font: inherit; color: inherit; }
 .status { font-size: .75rem; color: var(--faint); min-width: 5rem; text-align: right; }
 .status[data-kind="error"] { color: var(--accent); }
 
-main { max-width: 1200px; margin: 0 auto; padding: clamp(1.25rem, 4vw, 3rem) var(--gutter) 4rem; }
+main { max-width: 1360px; margin: 0 auto; padding: clamp(1.25rem, 4vw, 3rem) var(--gutter) 4rem; }
 
 /* ---------- Shared ---------- */
 .arrows { display: flex; gap: .35rem; }
@@ -110,7 +110,7 @@ main { max-width: 1200px; margin: 0 auto; padding: clamp(1.25rem, 4vw, 3rem) var
 .myear { font-size: .38em; letter-spacing: .02em; color: var(--muted); font-weight: 400; }
 .grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
 .wd span {
-  padding: 0 .5rem .55rem; font-size: .7rem; letter-spacing: .14em;
+  padding: 0 .5rem; font-size: .7rem; letter-spacing: .14em;
   text-transform: uppercase; color: var(--muted);
 }
 .days { border-top: 1px solid var(--ink); border-left: 1px solid var(--line); }
@@ -138,6 +138,57 @@ main { max-width: 1200px; margin: 0 auto; padding: clamp(1.25rem, 4vw, 3rem) var
 .ev b { font-weight: 600; }
 .ev.done { opacity: .45; text-decoration: line-through; }
 .more { padding-left: 4px; font-size: .7rem; color: var(--muted); }
+
+/* ---------- Month notes panel ---------- */
+.mbody {
+  display: grid; grid-template-columns: minmax(200px, 270px) minmax(0, 1fr);
+  gap: clamp(1rem, 2.5vw, 2rem); align-items: stretch;
+}
+.wd, .ptabs { height: 1.9rem; }
+.mpanel { display: flex; flex-direction: column; min-width: 0; }
+.ptabs { display: flex; gap: 1rem; align-items: flex-start; }
+.ptabs button {
+  position: relative; font-size: .7rem; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--faint); padding: 0;
+}
+.ptabs button.on { color: var(--ink); }
+.ptabs button.has::after {
+  content: ""; position: absolute; top: -1px; right: -7px;
+  width: 4px; height: 4px; border-radius: 50%; background: var(--accent);
+}
+.parea {
+  position: relative; flex: 1; min-height: 22rem;
+  border: 1px solid var(--line); border-top: 1px solid var(--ink);
+  background: var(--card);
+}
+.ptext, .pink {
+  position: absolute; inset: 0; width: 100%; height: 100%; display: block;
+  background-color: var(--card);
+  background-image: repeating-linear-gradient(to bottom, transparent 0 31px, var(--line) 31px 32px);
+}
+.ptext {
+  border: 0; outline: none; resize: none; margin: 0;
+  padding: 4px 14px; line-height: 32px; font-size: 1rem;
+  font-family: var(--serif); background-attachment: local;
+  background-position: 0 4px;
+}
+.ptext::placeholder { color: var(--faint); }
+.pink {
+  cursor: crosshair; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+}
+.ptools { display: flex; align-items: center; gap: .55rem; padding: .6rem 0 0; flex-wrap: wrap; }
+.pcol {
+  width: 16px; height: 16px; border-radius: 50%; background: var(--c);
+  box-shadow: 0 0 0 2px var(--paper), 0 0 0 3px transparent;
+}
+.pcol.on { box-shadow: 0 0 0 2px var(--paper), 0 0 0 3.5px var(--c); }
+.psep { flex: 1; }
+.ptool {
+  font-size: .75rem; padding: .25rem .55rem; border: 1px solid var(--line);
+  border-radius: 999px; background: var(--card); color: var(--muted);
+}
+.ptool:hover { color: var(--ink); border-color: var(--faint); }
+.ptool.on { background: var(--ink); color: var(--paper); border-color: var(--ink); }
 
 /* ---------- Day view ---------- */
 .day { max-width: 720px; margin: 0 auto; }
@@ -217,6 +268,12 @@ main { max-width: 1200px; margin: 0 auto; padding: clamp(1.25rem, 4vw, 3rem) var
 .palette button { width: 28px; height: 28px; border-radius: 50%; background: var(--c); transition: transform .1s; }
 .palette button:hover { transform: scale(1.12); }
 
+@media (max-width: 759px) {
+  .mbody { grid-template-columns: minmax(0, 1fr); }
+  .mpanel { order: 2; margin-top: 1.5rem; }
+  .parea { min-height: 16rem; }
+}
+
 /* ---------- Small screens ---------- */
 @media (max-width: 640px) {
   .top { flex-wrap: wrap; gap: .45rem .75rem; padding-top: .55rem; padding-bottom: .55rem; }
@@ -225,7 +282,7 @@ main { max-width: 1200px; margin: 0 auto; padding: clamp(1.25rem, 4vw, 3rem) var
   .status { min-width: 0; }
   .status:not([data-kind="error"]) { display: none; }
   .cell { min-height: 3.9rem; padding: .35rem; }
-  .wd span { padding: 0 .35rem .45rem; }
+  .wd span { padding: 0 .35rem; }
   .evs { flex-direction: row; flex-wrap: wrap; gap: 3px; }
   .ev { width: 7px; height: 7px; padding: 0; border: 0; border-radius: 50%; background: var(--c); font-size: 0; }
   .ev.done { opacity: .35; }

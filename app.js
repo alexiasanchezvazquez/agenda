@@ -10,6 +10,9 @@
   const MONTHS_SHORT = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
   const WEEKDAYS = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo'];
   const WEEKDAYS_SHORT = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
+  const INK_COLORS = ['#1f1c18', '#b5654f', '#5a7bb0', '#7f9a62'];
+  const INK_SCALE = 10000;   // stroke coordinates are stored relative to panel width
+  const INK_REF_W = 280;     // reference panel width for line thickness
   const SAVE_DELAY = 700;
   const RETRY_DELAY = 5000;
 
@@ -19,6 +22,7 @@
 
   // ---------- State ----------
   const days = new Map();      // 'YYYY-MM-DD' -> { items: [], notes: '' }
+  const months = new Map();    // 'YYYY-MM' -> { notes: '', ink: [] }
   const timers = new Map();    // pending debounced saves
   const inFlight = new Set();  // days being written
   const dirty = new Set();     // days changed while being written
@@ -26,6 +30,7 @@
   let started = false;
   let currentColor = COLORS[0];
   let palette = null;
+  let panelObserver = null;
 
   // ---------- DOM ----------
   const $ = (sel, root = document) => root.querySelector(sel);
@@ -52,6 +57,8 @@
 
   const getDay = k => days.get(k) || { items: [], notes: '' };
   const ensureDay = k => { if (!days.has(k)) days.set(k, { items: [], notes: '' }); return days.get(k); };
+  const getMonth = mk => months.get(mk) || { notes: '', ink: [] };
+  const ensureMonth = mk => { if (!months.has(mk)) months.set(mk, { notes: '', ink: [] }); return months.get(mk); };
   const isTyping = () => document.activeElement && document.activeElement.matches('input, textarea');
 
   // ---------- Status ----------
@@ -63,19 +70,29 @@
 
   // ---------- Persistence ----------
   async function loadAll() {
-    const { data, error } = await sb.from('days')
-      .select('day,items,notes')
-      .gte('day', keyOf(FIRST))
-      .lte('day', keyOf(LAST));
-    if (error) { console.error(error); setStatus('Sin conexión', 'error'); return false; }
+    const [dRes, mRes] = await Promise.all([
+      sb.from('days').select('day,items,notes').gte('day', keyOf(FIRST)).lte('day', keyOf(LAST)),
+      sb.from('months').select('month,notes,ink')
+    ]);
+    if (dRes.error || mRes.error) { console.error(dRes.error || mRes.error); setStatus('Sin conexión', 'error'); return false; }
     const busy = k => timers.has(k) || inFlight.has(k);
-    const remote = new Set();
-    for (const row of data) {
-      remote.add(row.day);
+
+    const remoteDays = new Set();
+    for (const row of dRes.data) {
+      remoteDays.add(row.day);
       if (busy(row.day)) continue;
       days.set(row.day, { items: Array.isArray(row.items) ? row.items : [], notes: row.notes || '' });
     }
-    for (const k of [...days.keys()]) if (!remote.has(k) && !busy(k)) days.delete(k);
+    for (const k of [...days.keys()]) if (!remoteDays.has(k) && !busy(k)) days.delete(k);
+
+    const remoteMonths = new Set();
+    for (const row of mRes.data) {
+      remoteMonths.add(row.month);
+      if (busy(`m:${row.month}`)) continue;
+      months.set(row.month, { notes: row.notes || '', ink: Array.isArray(row.ink) ? row.ink : [] });
+    }
+    for (const mk of [...months.keys()]) if (!remoteMonths.has(mk) && !busy(`m:${mk}`)) months.delete(mk);
+
     refreshStatus();
     return true;
   }
@@ -90,14 +107,7 @@
     if (inFlight.has(k)) { dirty.add(k); return; }
     inFlight.add(k);
     refreshStatus();
-    const d = getDay(k);
-    const isEmpty = !d.items.length && !d.notes.trim();
-    const { error } = isEmpty
-      ? await sb.from('days').delete().eq('user_id', user.id).eq('day', k)
-      : await sb.from('days').upsert(
-          { user_id: user.id, day: k, items: d.items, notes: d.notes, updated_at: new Date().toISOString() },
-          { onConflict: 'user_id,day' }
-        );
+    const { error } = k.startsWith('m:') ? await writeMonth(k.slice(2)) : await writeDay(k);
     inFlight.delete(k);
     if (error) {
       console.error(error);
@@ -107,6 +117,24 @@
     }
     if (dirty.has(k)) { dirty.delete(k); write(k); return; }
     refreshStatus();
+  }
+
+  function writeDay(k) {
+    const d = getDay(k);
+    if (!d.items.length && !d.notes.trim()) return sb.from('days').delete().eq('user_id', user.id).eq('day', k);
+    return sb.from('days').upsert(
+      { user_id: user.id, day: k, items: d.items, notes: d.notes, updated_at: new Date().toISOString() },
+      { onConflict: 'user_id,day' }
+    );
+  }
+
+  function writeMonth(mk) {
+    const d = getMonth(mk);
+    if (!d.ink.length && !d.notes.trim()) return sb.from('months').delete().eq('user_id', user.id).eq('month', mk);
+    return sb.from('months').upsert(
+      { user_id: user.id, month: mk, notes: d.notes, ink: d.ink, updated_at: new Date().toISOString() },
+      { onConflict: 'user_id,month' }
+    );
   }
 
   function flushAll() {
@@ -196,14 +224,198 @@
           <h1><span class="mname">${MONTHS[m]}</span> <span class="myear">${y}</span></h1>
           <div class="arrows">${arrow('prev', prevHref, 'Mes anterior')}${arrow('next', nextHref, 'Mes siguiente')}</div>
         </div>
-        <div class="grid wd">${WEEKDAYS_SHORT.map(w => `<span>${w}</span>`).join('')}</div>
-        <div class="grid days">${cells}</div>
+        <div class="mbody">
+          <aside class="mpanel" id="mpanel">
+            <div class="ptabs">
+              <button type="button" data-tab="text">Texto</button>
+              <button type="button" data-tab="ink">A mano</button>
+            </div>
+            <div class="parea">
+              <textarea class="ptext" placeholder="Notas de ${MONTHS[m]}…"></textarea>
+              <canvas class="pink" aria-label="Notas a mano"></canvas>
+            </div>
+            <div class="ptools">
+              ${INK_COLORS.map((c, i) => `<button type="button" class="pcol${i === 0 ? ' on' : ''}" data-c="${c}" style="--c:${c}" aria-label="Color"></button>`).join('')}
+              <span class="psep"></span>
+              <button type="button" class="ptool" data-tool="eraser" aria-label="Goma">Goma</button>
+              <button type="button" class="ptool" data-tool="undo" aria-label="Deshacer">↶</button>
+              <button type="button" class="ptool" data-tool="clear" aria-label="Borrar todo">Borrar</button>
+            </div>
+          </aside>
+          <div class="mcal">
+            <div class="grid wd">${WEEKDAYS_SHORT.map(w => `<span>${w}</span>`).join('')}</div>
+            <div class="grid days">${cells}</div>
+          </div>
+        </div>
       </section>`;
+    bindPanel(monthKey(y, m));
+  }
+
+  // ---------- Month notes panel ----------
+  function preferredTab() {
+    try { const t = localStorage.getItem('agenda-panel-tab'); if (t === 'text' || t === 'ink') return t; } catch (e) { /* storage unavailable */ }
+    return matchMedia('(pointer: coarse)').matches && window.innerWidth >= 760 ? 'ink' : 'text';
+  }
+
+  function bindPanel(mk) {
+    const k = `m:${mk}`;
+    const panel = $('#mpanel', viewEl);
+    const text = $('.ptext', panel);
+    const canvas = $('.pink', panel);
+    const tools = $('.ptools', panel);
+    const tabBtns = [...panel.querySelectorAll('[data-tab]')];
+    const ctx = canvas.getContext('2d');
+    let W = 0, H = 0;
+    let tool = 'pen';
+    let penColor = INK_COLORS[0];
+    let current = null;
+    let erasing = false;
+
+    // Text tab
+    text.value = getMonth(mk).notes;
+    text.addEventListener('input', () => { ensureMonth(mk).notes = text.value; queueSave(k); markTabs(); });
+
+    function markTabs() {
+      const d = getMonth(mk);
+      tabBtns[0].classList.toggle('has', !!d.notes.trim());
+      tabBtns[1].classList.toggle('has', d.ink.length > 0);
+    }
+
+    function setTab(t) {
+      try { localStorage.setItem('agenda-panel-tab', t); } catch (e) { /* storage unavailable */ }
+      tabBtns.forEach(b => b.classList.toggle('on', b.dataset.tab === t));
+      text.hidden = t !== 'text';
+      canvas.hidden = t !== 'ink';
+      tools.hidden = t !== 'ink';
+      if (t === 'ink') resize();
+    }
+    tabBtns.forEach(b => b.addEventListener('click', () => setTab(b.dataset.tab)));
+
+    // Ink rendering
+    const widthAt = pr => 1.6 * (0.35 + pr * 1.3) * (W / INK_REF_W);
+
+    function drawSegment(c, x0, y0, x1, y1, pr) {
+      const u = W / INK_SCALE;
+      ctx.strokeStyle = c;
+      ctx.lineWidth = widthAt(pr);
+      ctx.beginPath();
+      ctx.moveTo(x0 * u, y0 * u);
+      ctx.lineTo(x1 * u, y1 * u);
+      ctx.stroke();
+    }
+
+    function drawStroke(st) {
+      const p = st.p;
+      if (p.length === 3) { drawSegment(st.c, p[0], p[1], p[0] + 1, p[1], p[2] / 100); return; }
+      for (let i = 3; i < p.length; i += 3) drawSegment(st.c, p[i - 3], p[i - 2], p[i], p[i + 1], (p[i - 1] + p[i + 2]) / 200);
+    }
+
+    function redraw() {
+      ctx.clearRect(0, 0, W, H);
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      getMonth(mk).ink.forEach(drawStroke);
+    }
+
+    function resize() {
+      const r = canvas.getBoundingClientRect();
+      if (!r.width || !r.height) return;
+      const dpr = window.devicePixelRatio || 1;
+      W = r.width; H = r.height;
+      canvas.width = Math.round(W * dpr);
+      canvas.height = Math.round(H * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      redraw();
+    }
+
+    if (panelObserver) panelObserver.disconnect();
+    panelObserver = new ResizeObserver(() => { if (!canvas.hidden) resize(); });
+    panelObserver.observe(canvas);
+
+    // Ink input: Apple Pencil and mouse draw; fingers keep scrolling
+    const toUnits = ev => {
+      const r = canvas.getBoundingClientRect();
+      return [Math.round((ev.clientX - r.left) / W * INK_SCALE), Math.round((ev.clientY - r.top) / W * INK_SCALE)];
+    };
+
+    function addPoint(ev) {
+      const [x, y] = toUnits(ev);
+      const pr = Math.round((ev.pointerType === 'pen' ? (ev.pressure || 0.5) : 0.5) * 100);
+      const p = current.p;
+      const n = p.length;
+      if (n && Math.abs(p[n - 3] - x) < 4 && Math.abs(p[n - 2] - y) < 4) return;
+      p.push(x, y, pr);
+      if (n) drawSegment(current.c, p[n - 3], p[n - 2], x, y, (p[n - 1] + pr) / 200);
+      else drawSegment(current.c, x, y, x + 1, y, pr / 100);
+    }
+
+    function eraseAt(ev) {
+      const [x, y] = toUnits(ev);
+      const rad = 14 / W * INK_SCALE;
+      const d = getMonth(mk);
+      const keep = d.ink.filter(st => {
+        for (let i = 0; i < st.p.length; i += 3) if (Math.hypot(st.p[i] - x, st.p[i + 1] - y) < rad) return false;
+        return true;
+      });
+      if (keep.length !== d.ink.length) { ensureMonth(mk).ink = keep; redraw(); queueSave(k); markTabs(); }
+    }
+
+    ['touchstart', 'touchmove'].forEach(type => canvas.addEventListener(type, e => {
+      if ([...e.touches].some(t => t.touchType === 'stylus')) e.preventDefault();
+    }, { passive: false }));
+
+    canvas.addEventListener('pointerdown', e => {
+      if (e.pointerType === 'touch' || e.button > 0) return;
+      e.preventDefault();
+      canvas.setPointerCapture(e.pointerId);
+      if (tool === 'eraser') { erasing = true; eraseAt(e); return; }
+      ctx.lineCap = 'round';
+      current = { c: penColor, p: [] };
+      addPoint(e);
+    });
+    canvas.addEventListener('pointermove', e => {
+      if (current) (e.getCoalescedEvents ? e.getCoalescedEvents() : [e]).forEach(addPoint);
+      else if (erasing) eraseAt(e);
+    });
+    const endStroke = () => {
+      if (current && current.p.length) { ensureMonth(mk).ink.push(current); queueSave(k); markTabs(); }
+      current = null;
+      erasing = false;
+    };
+    canvas.addEventListener('pointerup', endStroke);
+    canvas.addEventListener('pointercancel', endStroke);
+
+    // Toolbar
+    tools.addEventListener('click', e => {
+      const col = e.target.closest('[data-c]');
+      if (col) {
+        penColor = col.dataset.c;
+        tool = 'pen';
+        tools.querySelectorAll('.pcol').forEach(b => b.classList.toggle('on', b === col));
+        tools.querySelector('[data-tool="eraser"]').classList.remove('on');
+        return;
+      }
+      const t = e.target.closest('[data-tool]');
+      if (!t) return;
+      const d = getMonth(mk);
+      if (t.dataset.tool === 'eraser') {
+        tool = tool === 'eraser' ? 'pen' : 'eraser';
+        t.classList.toggle('on', tool === 'eraser');
+      } else if (t.dataset.tool === 'undo' && d.ink.length) {
+        d.ink.pop(); redraw(); queueSave(k); markTabs();
+      } else if (t.dataset.tool === 'clear' && d.ink.length && confirm('¿Borrar todo lo escrito a mano este mes?')) {
+        ensureMonth(mk).ink = []; redraw(); queueSave(k); markTabs();
+      }
+    });
+
+    markTabs();
+    setTab(preferredTab());
   }
 
   // ---------- Day view ----------
   function renderDay(date, focusAdd) {
     closePalette();
+    if (panelObserver) { panelObserver.disconnect(); panelObserver = null; }
     const k = keyOf(date);
     const day = getDay(k);
     const y = date.getFullYear(), m = date.getMonth();
