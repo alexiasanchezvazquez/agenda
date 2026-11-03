@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Agenda</title>
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="theme-color" content="#f7f4ee">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Agenda">
+  <link rel="apple-touch-icon" href="icon-180.png">
+  <link rel="icon" type="image/png" href="icon-180.png">
+  <link rel="manifest" href="manifest.json">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..500;1,9..144,300..500&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- Login -->
+  <div id="login" class="login" hidden>
+    <form id="loginForm" autocomplete="on">
+      <h1>Agenda</h1>
+      <p class="sub">Noviembre 2026 – diciembre 2027</p>
+      <input id="email" type="email" placeholder="Email" autocomplete="username" required>
+      <input id="password" type="password" placeholder="Contraseña" autocomplete="current-password" required>
+      <button type="submit" id="loginBtn">Entrar</button>
+      <p class="msg" id="loginMsg"></p>
+    </form>
+  </div>
+
+  <!-- App -->
+  <div id="app" hidden>
+    <header class="top">
+      <a class="brand" href="#">Agenda</a>
+      <nav id="months" class="months" aria-label="Meses"></nav>
+      <div class="top-actions">
+        <span id="status" class="status"></span>
+        <button id="todayBtn" class="ghost" type="button">Hoy</button>
+        <button id="logoutBtn" class="ghost" type="button">Salir</button>
+      </div>
+    </header>
+    <main id="view"></main>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.4/dist/umd/supabase.min.js"></script>
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
